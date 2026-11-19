@@ -58,6 +58,7 @@ async function audit(page, name, expectedWidth) {
       runOnly: { type: 'tag', values: ['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22aa','best-practice'] },
     });
     return {
+      viewportWidth: window.innerWidth,
       width: document.documentElement.clientWidth,
       scrollWidth: document.documentElement.scrollWidth,
       violations: findings.violations.map(issue => ({ id: issue.id, nodes: issue.nodes.map(node => node.target) })),
@@ -70,7 +71,7 @@ async function audit(page, name, expectedWidth) {
   assert.equal(await page.locator('main').count(), 1, name + ': región principal');
   assert.equal(await page.locator('h1').count(), 1, name + ': encabezado principal');
   assert.match(await page.locator('html').getAttribute('lang'), /^es(?:-|$)/);
-  assert.equal(result.width, expectedWidth, name + ': ancho efectivo');
+  assert.equal(result.viewportWidth, expectedWidth, name + ': ancho efectivo');
   assert.equal(result.scrollWidth, result.width, name + ': desbordamiento horizontal');
   assert.deepEqual(result.violations, [], name + ': axe encontró infracciones');
 }
