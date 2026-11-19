@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 import httpx
 import jwt
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -26,7 +27,12 @@ KC_PUBLIC = os.environ.get("KEYCLOAK_PUBLIC", "http://localhost:8180/realms/muni
 KC_INTERNAL = os.environ.get("KEYCLOAK_INTERNAL", KC_PUBLIC)
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "solo-desarrollo-local")
 DEMO_IDENTITIES = json.loads(os.environ.get("DEMO_IDENTITIES", '{"vecino1":"JUB-001","vecino2":"NO-003"}'))
-REDIRECT_URI = os.environ.get("APP_PUBLIC_URL", "http://localhost:8080").rstrip("/") + "/auth/callback"
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "http://localhost:8080").rstrip("/")
+REDIRECT_URI = APP_PUBLIC_URL + "/auth/callback"
+# SessionMiddleware signs cookies. Encrypt the OIDC logout hint before storing it.
+logout_cipher = Fernet(base64.urlsafe_b64encode(
+    hashlib.sha256(b"municipio-logout\0" + SESSION_SECRET.encode()).digest()
+))
 BENEFITS = [
     {"id": "tarifa-social", "nombre": "Tarifa social"},
     {"id": "descuento-transporte", "nombre": "Descuento en transporte"},
@@ -281,17 +287,35 @@ def callback(request: Request, code: str, state: str):
     )
     if response.status_code != 200:
         raise HTTPException(401, "No se pudo completar el inicio de sesión")
-    claims = decode_token(response.json()["access_token"])
+    tokens = response.json()
+    claims = decode_token(tokens["access_token"])
     request.session.clear()
     request.session["user"] = {"sub": claims["sub"], "preferred_username": claims.get("preferred_username", ""), "realm_access": claims.get("realm_access", {})}
     request.session["csrf"] = secrets.token_urlsafe(24)
+    if id_token := tokens.get("id_token"):
+        request.session["logout_hint"] = logout_cipher.encrypt(id_token.encode()).decode()
     return RedirectResponse("/", status_code=303)
 
 
 @app.get("/logout")
 def logout(request: Request):
+    user = request.session.get("user")
+    stored_hint = request.session.get("logout_hint")
     request.session.clear()
-    return RedirectResponse("/", status_code=303)
+    if not user:
+        return RedirectResponse("/", status_code=303)
+
+    params = {"client_id": "municipio-web", "post_logout_redirect_uri": APP_PUBLIC_URL + "/"}
+    if stored_hint:
+        try:
+            params["id_token_hint"] = logout_cipher.decrypt(stored_hint.encode()).decode()
+        except InvalidToken:
+            pass  # Keycloak can ask for confirmation if the hint is unavailable.
+    return RedirectResponse(
+        f"{KC_PUBLIC}/protocol/openid-connect/logout?{urlencode(params)}",
+        status_code=303,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
 
 
 def web_user(request: Request) -> dict:

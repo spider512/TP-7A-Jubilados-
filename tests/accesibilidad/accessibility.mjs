@@ -159,7 +159,8 @@ async function flow(setup) {
     await audit(page,setup.name + ' inicio del vecino',width);
     const approved = await create(page,'tarifa-social',setup);
     const rejected = await create(page,'descuento-transporte',setup);
-    await context.clearCookies();
+    await enter(page,'a[href="/logout"]');
+    await page.waitForURL(portal.href);
     await login(page,'agente1',{...setup,tryWrong:false});
     await audit(page,setup.name + ' bandeja',width);
     const approvedReason = 'Verificación de accesibilidad. Se aprobó el beneficio.';
@@ -188,7 +189,8 @@ async function flow(setup) {
       assert.equal(await page.locator('#motivo').inputValue(),reason);
       await audit(page,setup.name + ' error de padrón',width);
     }
-    await context.clearCookies();
+    await enter(page,'a[href="/logout"]');
+    await page.waitForURL(portal.href);
     await login(page,'vecino1',{...setup,tryWrong:false});
     for (const [target,state,reason] of [[approved,'aprobada',approvedReason],[rejected,'rechazada',rejectedReason]]) {
       await page.goto(portal.href);

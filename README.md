@@ -31,6 +31,8 @@ La aplicación se publica en `localhost:8080` y Keycloak en `localhost:8180`. Po
 
 **Importante:** Keycloak importa los usuarios al crear su volumen por primera vez. Cambiar `TEST_PASSWORD` en `.env` después de ese primer arranque no modifica las contraseñas de usuarios ya importados. Las solicitudes también permanecen en el volumen de PostgreSQL después de `docker compose down`.
 
+Si ya tenés un volumen de Keycloak de una versión anterior, ejecutá una vez `python apply_realm_settings.py` desde la raíz del proyecto con Keycloak arriba. Así se habilita el retorno al portal al cerrar sesión. La actualización conserva usuarios, contraseñas y solicitudes.
+
 ## Usuarios y recorrido de prueba
 
 | Usuario | Rol | Respuesta del padrón simulado |
