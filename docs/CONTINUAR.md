@@ -12,7 +12,7 @@ La demo local funciona en http://localhost:8080/ con Keycloak en http://localhos
 - `upstream`: https://github.com/wizard909/TP-7A-Jubilados-.git.
 - Rama de entrada: `mejoras-tp`, limpia, commit `f7d9d4f941ff0f02062b96eecf244a324567d3b8`.
 - Rama de trabajo creada: `codex/reproducibilidad-7a`. Cambios locales, sin commit, push, PR ni tag.
-- Integrantes confirmados por el usuario: Kevin Matias C, Facundo Cichero, Lautaro Olivera y Ezequiel Pereira. El documento compartido omite a Lautaro; conservar los cuatro. El usuario pidió priorizar funcionamiento y posponer documentación.
+- Integrantes de la entrega final: Kevin Matías C., Facundo Cichero y Ezequiel Pereira.
 
 ## Requisitos y decisiones preservadas
 
