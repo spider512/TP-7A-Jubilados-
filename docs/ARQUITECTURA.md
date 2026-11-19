@@ -1,6 +1,6 @@
 # Arquitectura del corte 7A
 
-**Integrantes** Kevin Matías C., Facundo Cichero y Ezequiel Pereira.
+**Integrantes** Facundo Cichero y Ezequiel Pereira.
 
 Un municipio atiende a unas 3.000 personas, con dos beneficios, un canal web, un servidor y dos desarrolladores. El diseño cubre el trámite municipal y sus dependencias. La demo implementa login, presentación, decisión y consulta del resultado, con identidades y padrón ficticios. El objetivo prioritario es que una persona jubilada pueda completar el trámite con un celular antiguo y una conexión lenta.
 
