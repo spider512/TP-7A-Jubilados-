@@ -63,3 +63,35 @@ La API usa el prefijo `/api/v1`. Las páginas web y la API forman parte de la mi
 ## Alcance de la implementación
 
 El padrón y sus respuestas son ficticios; los usuarios de Keycloak también son de prueba. Las solicitudes creadas durante la ejecución sí se persisten en PostgreSQL. El proyecto demuestra el caso de uso elegido y no es un sistema municipal en producción. Las comprobaciones automáticas de accesibilidad y rendimiento registradas en el documento no equivalen a una certificación WCAG AA ni a mediciones en dispositivos reales.
+
+## Verificaciones reproducibles
+
+Para trabajar en la copia Windows desde Ubuntu 24.04:
+
+```sh
+cd /mnt/e/Proyectos/TP-7A-Jubilados/TP-7A-Jubilados-
+sudo docker compose up -d --build
+```
+
+Si tu usuario ya tiene acceso a Docker, se puede omitir `sudo`. En este equipo se instaló Docker Engine desde el repositorio oficial de Ubuntu; la instalación y `hello-world` pasaron.
+
+Los servicios de esta demo HTTP con Keycloak `start-dev` solo se publican en `127.0.0.1`. No es una configuración para un servidor público. Las contraseñas quedan en `.env` y los cuatro usuarios de prueba usan `TEST_PASSWORD`; no compartir ese archivo ni subirlo a Git.
+
+Las pruebas aisladas usan SQLite en memoria y simulan las fallas externas, sin modificar la base de la demo:
+
+```sh
+sudo docker compose run --rm --no-deps \
+  -v ./tests:/app/tests:ro -v ./mock:/app/mock:ro \
+  -e DATABASE_URL=sqlite:// app \
+  python -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Con Python 3.10 o superior, el recorrido real usa los cuatro usuarios, OIDC Authorization Code con PKCE, API y formularios. Crea solicitudes ficticias y deja un resultado JSON sin contraseñas ni tokens:
+
+```sh
+python3 tests/smoke_compose.py --env .env --output smoke-result.json
+```
+
+Para sumar validación JSON Schema contra los contratos, usar un entorno virtual con `requirements-test.txt` y agregar `--contracts docs`. La opción `--persisted-id ID` verifica además una solicitud aprobada de una ejecución anterior después de recrear los servicios conservando los volúmenes. El recuento total puede variar por las solicitudes pendientes existentes.
+
+El estado de continuidad está en [docs/CONTINUAR.md](docs/CONTINUAR.md). Las clases y fuentes locales quedan en `.contexto-local/`, fuera de Git. Las comprobaciones automáticas y la revisión visual no certifican WCAG AA; siguen pendientes lector de pantalla y celular real.

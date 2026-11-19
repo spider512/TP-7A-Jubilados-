@@ -4,7 +4,7 @@ import json
 import os
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 import httpx
@@ -12,6 +12,7 @@ import jwt
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jwt import PyJWKClient
 from pydantic import BaseModel, ConfigDict
@@ -53,8 +54,24 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(engine)
 app = FastAPI(title="Beneficios municipales", docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 jwks = PyJWKClient(f"{KC_INTERNAL}/protocol/openid-connect/certs")
+
+BENEFIT_NAMES = {benefit["id"]: benefit["nombre"] for benefit in BENEFITS}
+# Local time for contemporary records in the Argentine municipal demo.
+PORTAL_TIMEZONE = timezone(timedelta(hours=-3))
+
+
+def portal_date(value: datetime) -> str:
+    # SQLite, used for local tests, can return stored UTC timestamps without an offset.
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(PORTAL_TIMEZONE).strftime("%d/%m/%Y")
+
+
+templates.env.filters["benefit_name"] = lambda value: BENEFIT_NAMES.get(value, value)
+templates.env.filters["portal_date"] = portal_date
 
 
 @app.on_event("startup")
@@ -70,15 +87,32 @@ def problem(status: int, title: str, detail: str) -> JSONResponse:
     )
 
 
+def request_error(request: Request, status: int, title: str, detail: str):
+    path = request.url.path
+    accepts_html = any(
+        entry.split(";", 1)[0].strip() == "text/html"
+        for entry in request.headers.get("accept", "").split(",")
+    )
+    if (path.startswith("/web/") or path == "/auth/callback") and accepts_html:
+        return templates.TemplateResponse(
+            request, "error.html",
+            {"user": request.session.get("user"), "title": title, "detail": detail,
+             "show_login": status == 401 or path == "/auth/callback"},
+            status_code=status,
+            headers={"Vary": "Accept", "Cache-Control": "no-store"},
+        )
+    return problem(status, title, detail)
+
+
 @app.exception_handler(HTTPException)
-async def http_error(_: Request, exc: HTTPException):
+async def http_error(request: Request, exc: HTTPException):
     titles = {400: "Entrada inválida", 401: "Autenticación requerida", 403: "Acceso denegado", 404: "No encontrado", 409: "Conflicto", 503: "Servicio no disponible"}
-    return problem(exc.status_code, titles.get(exc.status_code, "Error"), str(exc.detail))
+    return request_error(request, exc.status_code, titles.get(exc.status_code, "Error"), str(exc.detail))
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_error(_: Request, exc: RequestValidationError):
-    return problem(400, "Entrada inválida", "Revisá los datos enviados.")
+async def validation_error(request: Request, exc: RequestValidationError):
+    return request_error(request, 400, "Entrada inválida", "Revisá los datos enviados.")
 
 
 def db_session():
@@ -162,7 +196,14 @@ def decide_application(session: Session, user: dict, item_id: str, state: str, r
             raise HTTPException(503, "El padrón no está disponible; la solicitud sigue pendiente")
         if response.status_code != 200:
             raise HTTPException(503, "El padrón devolvió una respuesta inesperada")
-        if response.json().get("condicion") not in {"jubilado", "pensionado"}:
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise HTTPException(503, "El padrón devolvió una respuesta inesperada; la solicitud sigue pendiente") from exc
+        condition = result.get("condicion") if isinstance(result, dict) else None
+        if not isinstance(condition, str) or condition not in {"jubilado", "pensionado", "no_registrado"}:
+            raise HTTPException(503, "El padrón devolvió una respuesta inesperada; la solicitud sigue pendiente")
+        if condition == "no_registrado":
             raise HTTPException(409, "El padrón no confirma la condición requerida")
     item.estado = state
     item.motivo = reason.strip()[:500]
@@ -229,11 +270,13 @@ def login(request: Request):
 
 @app.get("/auth/callback")
 def callback(request: Request, code: str, state: str):
-    if not secrets.compare_digest(state, request.session.get("oidc_state", "")):
+    expected_state = request.session.get("oidc_state")
+    verifier = request.session.get("oidc_verifier")
+    if not expected_state or not verifier or not secrets.compare_digest(state, expected_state):
         raise HTTPException(400, "Estado de login inválido")
     response = httpx.post(
         f"{KC_INTERNAL}/protocol/openid-connect/token",
-        data={"grant_type": "authorization_code", "client_id": "municipio-web", "code": code, "redirect_uri": REDIRECT_URI, "code_verifier": request.session["oidc_verifier"]},
+        data={"grant_type": "authorization_code", "client_id": "municipio-web", "code": code, "redirect_uri": REDIRECT_URI, "code_verifier": verifier},
         timeout=10.0,
     )
     if response.status_code != 200:
@@ -290,11 +333,26 @@ def web_detail(item_id: str, request: Request, session: Session = Depends(db_ses
     item = find_application(session, item_id)
     if "agente" not in user.get("realm_access", {}).get("roles", []) and item.solicitante_id != user["sub"]:
         raise HTTPException(403, "No podés ver una solicitud ajena")
-    return templates.TemplateResponse(request, "detail.html", {"item": item, "user": user, "csrf": request.session.get("csrf", "")})
+    return render_web_detail(request, item, user)
+
+
+def render_web_detail(request: Request, item: Application, user: dict, error: HTTPException | None = None, reason: str = ""):
+    return templates.TemplateResponse(
+        request, "detail.html",
+        {"item": item, "user": user, "csrf": request.session.get("csrf", ""),
+         "decision_error": error.detail if error else None, "submitted_reason": reason},
+        status_code=error.status_code if error else 200,
+    )
 
 
 @app.post("/web/solicitudes/{item_id}/decision")
 def web_decide(item_id: str, request: Request, estado: str = Form(), motivo: str = Form(), csrf: str = Form(), session: Session = Depends(db_session)):
     check_csrf(request, csrf)
-    decide_application(session, web_user(request), item_id, estado, motivo)
+    user = web_user(request)
+    try:
+        decide_application(session, user, item_id, estado, motivo)
+    except HTTPException as exc:
+        if exc.status_code not in {400, 409, 503}:
+            raise
+        return render_web_detail(request, find_application(session, item_id), user, error=exc, reason=motivo[:500])
     return RedirectResponse(f"/web/solicitudes/{item_id}", status_code=303)
