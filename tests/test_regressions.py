@@ -9,7 +9,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-municipal = importlib.import_module('app.main')
+from app.main import app as municipal_app
+from app.integraciones import padron as padron_adapter
+from app.persistencia import db_session
+from app.seguridad import actor_from_claims, api_user
+from app.solicitudes.dominio import Solicitud
+from app.solicitudes.repositorio import SolicitudRow, SqlAlchemySolicitudes
 padron = importlib.import_module('mock.main')
 
 NEIGHBOUR = {'sub':'neighbour-test','preferred_username':'vecino1',
@@ -48,18 +53,20 @@ class ExternalFailureTests(unittest.TestCase):
     def setUp(self):
         self.engine=create_engine('sqlite://',connect_args={'check_same_thread':False},poolclass=StaticPool)
         self.factory=sessionmaker(self.engine)
-        municipal.Base.metadata.create_all(self.engine)
+        SolicitudRow.metadata.create_all(self.engine)
         def db():
             with self.factory() as session:
                 yield session
-        municipal.app.dependency_overrides[municipal.db_session]=db
-        municipal.app.dependency_overrides[municipal.api_user]=lambda:AGENT
-        self.client=TestClient(municipal.app,raise_server_exceptions=False)
+        municipal_app.dependency_overrides[db_session]=db
+        municipal_app.dependency_overrides[api_user]=lambda:AGENT
+        self.client=TestClient(municipal_app,raise_server_exceptions=False)
         with self.factory() as session:
-            self.item_id=municipal.create_application(session,NEIGHBOUR,'tarifa-social').id
+            neighbour = actor_from_claims(NEIGHBOUR)
+            item = Solicitud.presentar('tarifa-social', neighbour.id, neighbour.nombre)
+            self.item_id = SqlAlchemySolicitudes(session).agregar(item).id
 
     def tearDown(self):
-        municipal.app.dependency_overrides.clear()
+        municipal_app.dependency_overrides.clear()
         self.engine.dispose()
 
     def decide(self):
@@ -68,7 +75,7 @@ class ExternalFailureTests(unittest.TestCase):
 
     def assert_pending(self):
         with self.factory() as session:
-            item=session.get(municipal.Application,self.item_id)
+            item=session.get(SolicitudRow,self.item_id)
             self.assertEqual(item.estado,'pendiente')
             self.assertIsNone(item.agente_id)
             self.assertIsNone(item.resuelta_en)
@@ -77,24 +84,24 @@ class ExternalFailureTests(unittest.TestCase):
         for content in [b'not-json',b'[]',b'null',b'{}',b'{"condicion":"desconocida"}',
                         b'{"condicion":[]}',b'{"condicion":{}}']:
             with self.subTest(content=content):
-                with patch.object(municipal.httpx,'post',return_value=httpx.Response(200,content=content)):
+                with patch.object(padron_adapter.httpx,'post',return_value=httpx.Response(200,content=content)):
                     r=self.decide()
                 self.assertEqual(r.status_code,503)
                 self.assertEqual(r.headers['content-type'],'application/problem+json')
                 self.assert_pending()
 
     def test_timeout_is_503_and_keeps_pending(self):
-        with patch.object(municipal.httpx,'post',side_effect=httpx.ReadTimeout('test')):
+        with patch.object(padron_adapter.httpx,'post',side_effect=httpx.ReadTimeout('test')):
             self.assertEqual(self.decide().status_code,503)
         self.assert_pending()
 
     def test_negative_is_409_and_keeps_pending(self):
-        with patch.object(municipal.httpx,'post',return_value=httpx.Response(200,json={'condicion':'no_registrado'})):
+        with patch.object(padron_adapter.httpx,'post',return_value=httpx.Response(200,json={'condicion':'no_registrado'})):
             self.assertEqual(self.decide().status_code,409)
         self.assert_pending()
 
     def test_positive_is_persisted_and_cannot_be_overwritten(self):
-        with patch.object(municipal.httpx,'post',return_value=httpx.Response(200,json={'condicion':'jubilado'})):
+        with patch.object(padron_adapter.httpx,'post',return_value=httpx.Response(200,json={'condicion':'pensionado'})):
             r=self.decide()
             self.assertEqual(r.status_code,200)
             self.assertEqual(r.json()['estado'],'aprobada')

@@ -4,6 +4,8 @@ Ejecutar desde Windows o WSL con Python 3.10+. Crea solicitudes ficticias
 identificadas por sus motivos; nunca imprime contraseñas, códigos ni tokens.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 import base64
 import hashlib
 import http.cookiejar
@@ -205,6 +207,26 @@ def main():
         schema('Consulta del vecino',r,'Solicitud')
         check('Vecino consulta aprobacion',json.loads(r['text'])['estado']=='aprobada')
         status('No decide dos veces',api('PATCH',path,'agente1',{'estado':'rechazada','motivo':'Intento repetido'}),409)
+        race = api('POST', '/api/v1/solicitudes', body={'beneficioId':'tarifa-social'})
+        status('Crear solicitud para concurrencia', race, 201)
+        race_path = race['headers']['Location']
+        barrier = Barrier(2, timeout=10)
+
+        def concurrent_decision(state):
+            barrier.wait()
+            return Client().request('PATCH', app + race_path, token=tokens['agente1'],
+                                    body={'estado':state, 'motivo':'Concurrencia: ' + state})
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            decisions = list(pool.map(concurrent_decision, ('aprobada', 'rechazada')))
+        check('PostgreSQL admite una sola decisión concurrente', sorted(r['status'] for r in decisions) == [200, 409])
+        if sorted(r['status'] for r in decisions) == [200, 409]:
+            winner = next(r for r in decisions if r['status'] == 200)
+            loser = next(r for r in decisions if r['status'] == 409)
+            status('Conflicto concurrente', loser, 409)
+            final = api('GET', race_path)
+            check('Decisión concurrente ganadora persistida', final['status'] == 200 and
+                  json.loads(final['text']) == json.loads(winner['text']))
         for user,expected in [('vecino2',409),('vecino3',503)]:
             path2='/api/v1/solicitudes/'+ids[user]
             status('Padron '+user,api('PATCH',path2,'agente1',{'estado':'aprobada','motivo':'Prueba automatizada'}),expected)
