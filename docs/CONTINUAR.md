@@ -1,5 +1,7 @@
 # Grupo 7A — continuidad del TP
 
+> Registro histórico de la puesta en marcha. La versión vigente, el estado de los ADR y las verificaciones están en [Arquitectura del corte 7A](ARQUITECTURA.md).
+
 La demo local funciona en http://localhost:8080/ con Keycloak en http://localhost:8180/. Docker Engine 29.10.0 y Compose 5.8.0 quedaron instalados en Ubuntu-24.04. `hello-world`, la construcción y `compose config --quiet` pasaron.
 
 ## Copia de trabajo

@@ -54,13 +54,19 @@ Como comprobaciones adicionales, una solicitud de `vecino2` no se puede aprobar 
 
 ## Contratos y documento
 
-En el paquete completo, junto a esta carpeta, están:
+Los siguientes entregables están en el repositorio:
 
-- [Documento de arquitectura](docs/TP_Arquitectura_Jubilados.docx)
+- [Informe de arquitectura del equipo](docs/TP_Arquitectura_Jubilados.docx)
+- [Arquitectura implementada y verificaciones](docs/ARQUITECTURA.md)
 - [Contrato de la API municipal](docs/openapi.yaml)
 - [Contrato del padrón simulado](docs/padron-mock-openapi.yaml)
 
 La API usa el prefijo `/api/v1`. Las páginas web y la API forman parte de la misma aplicación. El documento explica la correspondencia entre estos servicios, el C4 de Contenedores y las decisiones tomadas.
+
+## Backend modular
+
+`app/main.py` compone FastAPI. `app/web.py` renderiza la MPA y `app/api.py` expone el contrato REST. Ambas rutas usan los casos de uso de `app/solicitudes/servicio.py`. La entidad `Solicitud` y las reglas de aplicación funcionan sin FastAPI, SQLAlchemy ni HTTPX. El repositorio SQLAlchemy posee la escritura y el adaptador del padrón traduce su respuesta al resultado interno. PostgreSQL acepta una sola decisión por solicitud mediante un `UPDATE` condicionado por el estado pendiente.
+
 
 ## Alcance de la implementación
 
@@ -79,7 +85,7 @@ Si tu usuario ya tiene acceso a Docker, se puede omitir `sudo`. En este equipo s
 
 Los servicios de esta demo HTTP con Keycloak `start-dev` solo se publican en `127.0.0.1`. No es una configuración para un servidor público. Las contraseñas quedan en `.env` y los cuatro usuarios de prueba usan `TEST_PASSWORD`; no compartir ese archivo ni subirlo a Git.
 
-Las pruebas aisladas usan SQLite en memoria y simulan las fallas externas, sin modificar la base de la demo:
+Las pruebas aisladas usan SQLite local para simular fallas y concurrencia. También controlan la dirección de los imports. La base de la demo queda separada:
 
 ```sh
 sudo docker compose run --rm --no-deps \
@@ -94,6 +100,8 @@ Con Python 3.10 o superior, el recorrido real usa los cuatro usuarios, OIDC Auth
 python3 tests/smoke_compose.py --env .env --output smoke-result.json
 ```
 
-Para sumar validación JSON Schema contra los contratos, usar un entorno virtual con `requirements-test.txt` y agregar `--contracts docs`. La opción `--persisted-id ID` verifica además una solicitud aprobada de una ejecución anterior después de recrear los servicios conservando los volúmenes. El recuento total puede variar por las solicitudes pendientes existentes.
+Para sumar validación JSON Schema contra los contratos, usar un entorno virtual con `requirements-test.txt` y agregar `--contracts docs`. La opción `--persisted-id ID` verifica además una solicitud aprobada de una ejecución anterior después de recrear los servicios conservando los volúmenes. Para repetir la prueba de persistencia, usá `requests_created.vecino1` del primer informe, recreá los servicios con `docker compose up -d --force-recreate` y ejecutá otra vez con `--persisted-id ID`. El recuento total puede variar por las solicitudes pendientes existentes.
 
 El estado de continuidad está en [docs/CONTINUAR.md](docs/CONTINUAR.md). Las clases y fuentes locales quedan en `.contexto-local/`, fuera de Git. Las comprobaciones automáticas y la revisión visual no certifican WCAG AA; siguen pendientes lector de pantalla y celular real.
+
+El [procedimiento de accesibilidad y red emulada](tests/accesibilidad/README.md) cubre escritorio, 360 y 320 px, teclado, Keycloak, cierre de sesión y cambio de cuenta. El informe distingue la evidencia automática del trabajo manual pendiente.
