@@ -1,6 +1,6 @@
 <#-- Modified by Grupo 7A from Keycloak 26.4.7, Apache-2.0. See LICENSE-keycloak.txt. -->
 <#import "footer.ftl" as loginFooter>
-<#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
+<#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false municipalLogin=false>
 <!DOCTYPE html>
 <html class="${properties.kcHtmlClass!}" lang="${lang}"<#if realm.internationalizationEnabled> dir="${(locale.rtl)?then('rtl','ltr')}"</#if>>
 
@@ -13,7 +13,7 @@
             <meta name="${meta?split('==')[0]}" content="${meta?split('==')[1]}"/>
         </#list>
     </#if>
-    <title>${msg("loginTitle",(realm.displayName!''))}</title>
+    <title><#if municipalLogin>Beneficios municipales · ${msg("loginAccountTitle")}<#else>${msg("loginTitle",(realm.displayName!''))}</#if></title>
     <link rel="icon" href="${url.resourcesPath}/img/favicon.ico" />
     <#if properties.stylesCommon?has_content>
         <#list properties.stylesCommon?split(' ') as style>
@@ -85,13 +85,24 @@
 </head>
 
 <body class="${properties.kcBodyClass!}" data-page-id="login-${pageId}">
-<div class="${properties.kcLoginClass!}">
+<div class="${properties.kcLoginClass!} <#if municipalLogin>municipal-login</#if>">
+    <#if !municipalLogin>
     <header id="kc-header" class="${properties.kcHeaderClass!}">
         <div id="kc-header-wrapper"
              class="${properties.kcHeaderWrapperClass!}">${kcSanitize(msg("loginTitleHtml",(realm.displayNameHtml!'')))?no_esc}</div>
     </header>
+    </#if>
     <main class="${properties.kcFormCardClass!}">
-        <header class="${properties.kcFormHeaderClass!}">
+        <#if municipalLogin>
+            <header id="kc-header" class="municipal-brand">
+                <span class="municipal-mark" aria-hidden="true"></span>
+                <div>
+                    <h1>Beneficios municipales</h1>
+                    <p>Portal para personas jubiladas</p>
+                </div>
+            </header>
+        </#if>
+        <header class="${properties.kcFormHeaderClass!} <#if municipalLogin>municipal-context</#if>">
             <#if realm.internationalizationEnabled  && locale.supported?size gt 1>
                 <div class="${properties.kcLocaleMainClass!}" id="kc-locale">
                     <div id="kc-locale-wrapper" class="${properties.kcLocaleWrapperClass!}">
@@ -117,11 +128,19 @@
                         <span class="subtitle"><span class="required">*</span> ${msg("requiredFields")}</span>
                     </div>
                     <div class="col-md-10">
-                        <h1 id="kc-page-title"><#nested "header"></h1>
+                        <#if municipalLogin>
+                            <h2 id="kc-page-title"><#nested "header"></h2>
+                        <#else>
+                            <h1 id="kc-page-title"><#nested "header"></h1>
+                        </#if>
                     </div>
                 </div>
             <#else>
-                <h1 id="kc-page-title"><#nested "header"></h1>
+                <#if municipalLogin>
+                    <h2 id="kc-page-title"><#nested "header"></h2>
+                <#else>
+                    <h1 id="kc-page-title"><#nested "header"></h1>
+                </#if>
             </#if>
         <#else>
             <#if displayRequiredFields>
@@ -132,7 +151,7 @@
                     <div class="col-md-10">
                         <#nested "show-username">
                         <div id="kc-username" class="${properties.kcFormGroupClass!}">
-                            <label id="kc-attempted-username">${auth.attemptedUsername}</label>
+                            <p class="municipal-account"><#if municipalLogin><span>${msg("username")}:</span> </#if><span id="kc-attempted-username">${auth.attemptedUsername}</span></p>
                             <a id="reset-login" href="${url.loginRestartFlowUrl}" aria-label="${msg("restartLoginTooltip")}">
                                 <div class="kc-login-tooltip">
                                     <i class="${properties.kcResetFlowIcon!}"></i>
@@ -145,7 +164,7 @@
             <#else>
                 <#nested "show-username">
                 <div id="kc-username" class="${properties.kcFormGroupClass!}">
-                    <label id="kc-attempted-username">${auth.attemptedUsername}</label>
+                    <p class="municipal-account"><#if municipalLogin><span>${msg("username")}:</span> </#if><span id="kc-attempted-username">${auth.attemptedUsername}</span></p>
                     <a id="reset-login" href="${url.loginRestartFlowUrl}" aria-label="${msg("restartLoginTooltip")}">
                         <div class="kc-login-tooltip">
                             <i class="${properties.kcResetFlowIcon!}"></i>

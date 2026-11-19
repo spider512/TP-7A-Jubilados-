@@ -2,7 +2,7 @@
 <#import "template.ftl" as layout>
 <#import "passkeys.ftl" as passkeys>
 <#assign credentialsError = messagesPerField.existsError('username','password')>
-<@layout.registrationLayout displayMessage=!credentialsError displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
+<@layout.registrationLayout municipalLogin=true displayMessage=!credentialsError displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
     <#if section = "header">
         ${msg("loginAccountTitle")}
     <#elseif section = "form">
